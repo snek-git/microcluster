@@ -14,7 +14,6 @@ from src.utilities import JobResult, serialize, deserialize
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
 class Client:
     def __init__(self, managerHost, managerPort):
         self.managerHost = managerHost
@@ -31,25 +30,25 @@ class Client:
 
     def _sendReceive(self, message):
         clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        clientSocket.settimeout(5)  # Set a 5-second timeout
+        clientSocket.settimeout(30)  # 30-second timeout
         try:
             clientSocket.connect((self.managerHost, self.managerPort))
             logging.info(f"Connected to manager at {self.managerHost}:{self.managerPort}")
 
-            clientSocket.send(json.dumps({'type': 'client'}).encode())
+            clientSocket.send(json.dumps({'type': 'client'}).encode() + b'\n')
             logging.info("Sent client type identifier")
 
-            clientSocket.send(json.dumps(message).encode())
+            clientSocket.send(json.dumps(message).encode() + b'\n')
             logging.info(f"Sent message: {message}")
 
-            response = clientSocket.recv(1024).decode()
+            response = clientSocket.recv(1024).decode().strip()
             logging.info(f"Received response: {response}")
 
             if not response:
                 logging.error("Received empty response from manager")
                 return None
 
-            return json.loads(response)  # This line is unchanged, but now it should work correctly
+            return json.loads(response)
         except socket.timeout:
             logging.error("Timeout waiting for manager response")
         except ConnectionRefusedError:
@@ -61,7 +60,6 @@ class Client:
         finally:
             clientSocket.close()
         return None
-
 
 def main():
     parser = argparse.ArgumentParser(description="Client for Distributed Computing Framework")
@@ -83,8 +81,10 @@ def main():
         response = client.submitJob(args.script, args.args)
         if response is None:
             print("Failed to submit job. Check the logs for more information.")
-        else:
+        elif response.get('status') == 'job_submitted':
             print(f"Job submitted with ID: {response['jobId']}")
+        else:
+            print(f"Unexpected response: {response}")
 
     elif args.action == "result":
         if not args.jobId:
@@ -93,18 +93,18 @@ def main():
         result = client.getResult(args.jobId)
         if result is None:
             print("Failed to get result. Check the logs for more information.")
-        elif 'status' in result and result['status'] == 'result_not_ready':
+        elif result.get('status') == 'result_not_ready':
             print(f"Result not ready for job {args.jobId}")
-        else:
-            if isinstance(result, dict) and 'success' in result:
-                if result['success']:
-                    print(f"Job {result['jobId']} completed successfully:")
-                    print(result['output'])
-                else:
-                    print(f"Job {result['jobId']} failed:")
-                    print(result['error'])
+        elif result.get('status') == 'result_ready':
+            job_result = deserialize(result['result'], JobResult)
+            if job_result.success:
+                print(f"Job {job_result.jobId} completed successfully:")
+                print(job_result.output)
             else:
-                print(f"Unexpected result format: {result}")
+                print(f"Job {job_result.jobId} failed:")
+                print(job_result.error)
+        else:
+            print(f"Unexpected result format: {result}")
 
     elif args.action == "state":
         if not args.jobId:
@@ -115,7 +115,6 @@ def main():
             print("Failed to get job state. Check the logs for more information.")
         else:
             print(f"State of job {args.jobId}: {state['state']}")
-
 
 if __name__ == "__main__":
     main()

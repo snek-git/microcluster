@@ -44,7 +44,7 @@ class JobQueue:
         logging.debug(f"Updated job {jobId} state to {state}")
 
     def getJobState(self, jobId):
-        return self.jobStates.get(jobId, None)
+        return self.jobStates.get(jobId, JobState.PENDING)
 
 class ManagerNode:
     def __init__(self, host, port):
@@ -94,7 +94,7 @@ class ManagerNode:
 
     def handleConnection(self, clientSocket, addr):
         try:
-            data = clientSocket.recv(1024).decode()
+            data = clientSocket.recv(1024).decode().strip()
             logging.debug(f"Received data from {addr}: {data}")
             message = json.loads(data)
 
@@ -129,7 +129,7 @@ class ManagerNode:
 
     def handleClient(self, clientSocket):
         try:
-            data = clientSocket.recv(1024).decode()
+            data = clientSocket.recv(1024).decode().strip()
             if not data:
                 logging.debug("Client disconnected")
                 return
@@ -144,32 +144,38 @@ class ManagerNode:
                 self.sendJobState(message['jobId'], clientSocket)
             else:
                 logging.warning(f"Unknown client action: {message['action']}")
+                response = json.dumps({'status': 'error', 'message': 'Unknown action'})
+                clientSocket.send(response.encode() + b'\n')
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from client")
+            response = json.dumps({'status': 'error', 'message': 'Invalid JSON'})
+            clientSocket.send(response.encode() + b'\n')
         except Exception as e:
             logging.error(f"Error handling client message: {str(e)}")
+            response = json.dumps({'status': 'error', 'message': 'Internal server error'})
+            clientSocket.send(response.encode() + b'\n')
 
     def submitJob(self, job, clientSocket):
         jobId = self.jobQueue.addJob(job)
         logging.info(f"Job submitted: {jobId}")
         response = json.dumps({'status': 'job_submitted', 'jobId': jobId})
         logging.debug(f"Sending response to client: {response}")
-        clientSocket.send(response.encode())
+        clientSocket.send(response.encode() + b'\n')
 
     def sendResult(self, jobId, clientSocket):
         if jobId in self.results:
-            result = self.results.pop(jobId)
-            response = json.dumps(result)
+            result = self.results[jobId]
+            response = json.dumps({'status': 'result_ready', 'result': serialize(result)})
         else:
             response = json.dumps({'status': 'result_not_ready'})
         logging.debug(f"Sending result to client: {response}")
-        clientSocket.send(response.encode())
+        clientSocket.send(response.encode() + b'\n')
 
     def sendJobState(self, jobId, clientSocket):
         state = self.jobQueue.getJobState(jobId)
-        response = json.dumps({'jobId': jobId, 'state': state.name if state else 'UNKNOWN'})
+        response = json.dumps({'jobId': jobId, 'state': state.name})
         logging.debug(f"Sending job state to client: {response}")
-        clientSocket.send(response.encode())
+        clientSocket.send(response.encode() + b'\n')
 
     def distributeJobs(self):
         while self.running:
@@ -186,8 +192,7 @@ class ManagerNode:
         if not self.workers:
             return None
         workerIds = list(self.workers.keys())
-        selectedId = workerIds[0]
-        self.workers[selectedId].lastHeartbeat = time.time()
+        selectedId = workerIds[0]  # Simple selection, can be improved
         return self.workers[selectedId]
 
     def sendJobToWorker(self, job, worker):
@@ -195,7 +200,7 @@ class ManagerNode:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((worker.address, worker.port))
                 serialized_job = serialize(job)
-                s.send(serialized_job.encode())  # Encode the serialized string
+                s.send(serialized_job.encode() + b'\n')
             logging.info(f"Sent job {job.jobId} to worker at {worker.address}:{worker.port}")
         except Exception as e:
             logging.error(f"Error sending job to worker: {str(e)}")

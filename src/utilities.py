@@ -8,23 +8,20 @@ class JobState(enum.Enum):
     RUNNING = 2
     COMPLETED = 3
     FAILED = 4
-    CANCELLED = 5
 
 class Job:
-    def __init__(self, jobId, userId, scriptPath, args=None):
+    def __init__(self, jobId, scriptPath, args=None, state=JobState.PENDING, submitTime=None, startTime=None, endTime=None):
         self.jobId = jobId
-        self.userId = userId
         self.scriptPath = scriptPath
         self.args = args or []
-        self.state = JobState.PENDING
-        self.submitTime = datetime.now()
-        self.startTime = None
-        self.endTime = None
+        self.state = state
+        self.submitTime = submitTime or datetime.now()
+        self.startTime = startTime
+        self.endTime = endTime
 
     def to_dict(self):
         return {
             'jobId': self.jobId,
-            'userId': self.userId,
             'scriptPath': self.scriptPath,
             'args': self.args,
             'state': self.state.value,
@@ -32,6 +29,16 @@ class Job:
             'startTime': self.startTime.isoformat() if self.startTime else None,
             'endTime': self.endTime.isoformat() if self.endTime else None
         }
+
+    @classmethod
+    def from_dict(cls, data):
+        data['state'] = JobState(data['state'])
+        data['submitTime'] = datetime.fromisoformat(data['submitTime'])
+        if data['startTime']:
+            data['startTime'] = datetime.fromisoformat(data['startTime'])
+        if data['endTime']:
+            data['endTime'] = datetime.fromisoformat(data['endTime'])
+        return cls(**data)
 
 class JobResult:
     def __init__(self, jobId, success, output, error=None):
@@ -42,9 +49,9 @@ class JobResult:
 
 def serialize(obj):
     if isinstance(obj, enum.Enum):
-        return json.dumps(obj.value)
+        return obj.value
     if isinstance(obj, datetime):
-        return json.dumps(obj.isoformat())
+        return obj.isoformat()
     if hasattr(obj, 'to_dict'):
         return json.dumps(obj.to_dict())
     if hasattr(obj, '__dict__'):
@@ -54,10 +61,5 @@ def serialize(obj):
 def deserialize(jsonStr, cls):
     data = json.loads(jsonStr)
     if cls == Job:
-        data['state'] = JobState(data['state'])
-        data['submitTime'] = datetime.fromisoformat(data['submitTime'])
-        if data['startTime']:
-            data['startTime'] = datetime.fromisoformat(data['startTime'])
-        if data['endTime']:
-            data['endTime'] = datetime.fromisoformat(data['endTime'])
+        return Job.from_dict(data)
     return cls(**data)

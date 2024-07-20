@@ -18,21 +18,30 @@ class WorkerNode:
         self.managerPort = managerPort
         self.workerPort = workerPort
         self.running = True
+        self.current_job = None
+        self.job_thread = None
+        self.shutdown_event = threading.Event()
 
     def start(self):
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.handle_signal)
+        signal.signal(signal.SIGTERM, self.handle_signal)
 
         self.registerWithManager()
 
-        jobThread = threading.Thread(target=self.listenForJobs)
-        jobThread.start()
+        self.job_thread = threading.Thread(target=self.listenForJobs)
+        self.job_thread.start()
 
-        heartbeatThread = threading.Thread(target=self.sendHeartbeat)
-        heartbeatThread.start()
+        self.heartbeat_thread = threading.Thread(target=self.sendHeartbeat)
+        self.heartbeat_thread.start()
 
-        jobThread.join()
-        heartbeatThread.join()
+        try:
+            while self.running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            self.shutdown()
+
+        self.job_thread.join()
+        self.heartbeat_thread.join()
 
     def registerWithManager(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -42,7 +51,7 @@ class WorkerNode:
                 'address': socket.gethostbyname(socket.gethostname()),
                 'port': self.workerPort
             }
-            s.send(json.dumps(message).encode())
+            s.send(json.dumps(message).encode() + b'\n')
         logging.info(f"Registered with manager at {self.managerHost}:{self.managerPort}")
 
     def listenForJobs(self):
@@ -51,15 +60,17 @@ class WorkerNode:
             s.listen()
             s.settimeout(1)
             logging.info(f"Listening for jobs on port {self.workerPort}")
-            while self.running:
+            while not self.shutdown_event.is_set():
                 try:
                     conn, addr = s.accept()
                     with conn:
-                        data = conn.recv(1024)
+                        data = conn.recv(1024).decode().strip()
                         if data:
-                            job = deserialize(data.decode(), Job)
+                            job = deserialize(data, Job)
+                            self.current_job = job
                             result = self.executeJob(job)
                             self.sendResultToManager(result)
+                            self.current_job = None
                 except socket.timeout:
                     continue
                 except Exception as e:
@@ -67,7 +78,7 @@ class WorkerNode:
 
     def executeJob(self, job):
         try:
-            command = [job.scriptPath] + job.args
+            command = [sys.executable, job.scriptPath] + job.args
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
 
@@ -83,25 +94,38 @@ class WorkerNode:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((self.managerHost, self.managerPort))
-                s.send(serialize({'type': 'job_result', 'result': serialize(result)}).encode())
+                s.send(json.dumps({'type': 'job_result', 'result': serialize(result)}).encode() + b'\n')
             logging.info(f"Sent result for job {result.jobId} to manager")
         except Exception as e:
             logging.error(f"Error sending result to manager: {str(e)}")
 
     def sendHeartbeat(self):
-        while self.running:
+        while not self.shutdown_event.is_set():
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((self.managerHost, self.managerPort))
-                    s.send(json.dumps({'type': 'heartbeat', 'port': self.workerPort}).encode())
+                    s.send(json.dumps({'type': 'heartbeat', 'port': self.workerPort}).encode() + b'\n')
                 logging.debug("Sent heartbeat to manager")
             except Exception as e:
                 logging.error(f"Error sending heartbeat: {str(e)}")
-            time.sleep(30)  # Send heartbeat every 30 seconds
+            self.shutdown_event.wait(30)  # Wait for 30 seconds or until shutdown is triggered
 
-    def signal_handler(self, signum, frame):
-        logging.info("Shutdown signal received. Cleaning up...")
+    def handle_signal(self, signum, frame):
+        logging.info("Shutdown signal received. Initiating graceful shutdown...")
+        self.shutdown()
+
+    def shutdown(self):
+        logging.info("Initiating worker shutdown...")
         self.running = False
+        self.shutdown_event.set()
+
+        # Wait for current job to complete
+        if self.current_job:
+            logging.info(f"Waiting for current job {self.current_job.jobId} to complete...")
+            while self.current_job:
+                time.sleep(1)
+
+        logging.info("Worker shutdown complete.")
 
 if __name__ == "__main__":
     import argparse
