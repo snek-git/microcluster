@@ -1,86 +1,221 @@
-# manager_node.py
+# src/manager.py
 import socket
 import threading
 import queue
 import json
-from utilities import Task, serialize, deserialize
+import logging
+import signal
+import sys
+import time
+from .utilities import Job, JobResult, JobState, serialize, deserialize
 
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class WorkerInfo:
+    def __init__(self, address, port):
+        self.address = address
+        self.port = port
+        self.lastHeartbeat = time.time()
+
+class JobQueue:
+    def __init__(self):
+        self.queue = queue.Queue()
+        self.jobStates = {}
+        self.jobCounter = 0
+
+    def addJob(self, job):
+        self.jobCounter += 1
+        job.jobId = str(self.jobCounter)
+        self.queue.put(job)
+        self.jobStates[job.jobId] = job.state
+        logging.debug(f"Added job {job.jobId} to queue. Queue size: {self.queue.qsize()}")
+        return job.jobId
+
+    def getJob(self):
+        if not self.queue.empty():
+            job = self.queue.get()
+            self.jobStates[job.jobId] = JobState.RUNNING
+            logging.debug(f"Retrieved job {job.jobId} from queue. Queue size: {self.queue.qsize()}")
+            return job
+        return None
+
+    def updateJobState(self, jobId, state):
+        self.jobStates[jobId] = state
+        logging.debug(f"Updated job {jobId} state to {state}")
+
+    def getJobState(self, jobId):
+        return self.jobStates.get(jobId, None)
 
 class ManagerNode:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.task_queue = queue.PriorityQueue()
+        self.jobQueue = JobQueue()
         self.results = {}
-        self.workers = []
-        self.users = {}  # Dictionary to store user information
-        self.user_tasks = {}  # Dictionary to store tasks per user
+        self.workers = {}
+        self.running = True
+        self.server_socket = None
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        print(f"Manager node listening on {self.host}:{self.port}")
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
 
-        threading.Thread(target=self.distribute_tasks, daemon=True).start()
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.server_socket.settimeout(1)
+        logging.info(f"Manager node listening on {self.host}:{self.port}")
 
-        while True:
-            client_socket, addr = server_socket.accept()
-            client_thread = threading.Thread(target=self.handle_connection, args=(client_socket, addr))
-            client_thread.start()
+        threading.Thread(target=self.distributeJobs, daemon=True).start()
+        threading.Thread(target=self.checkWorkerHeartbeats, daemon=True).start()
 
-    def handle_connection(self, client_socket, addr):
-        data = client_socket.recv(1024).decode()
-        message = json.loads(data)
+        while self.running:
+            try:
+                clientSocket, addr = self.server_socket.accept()
+                logging.info(f"New connection from {addr}")
+                threading.Thread(target=self.handleConnection, args=(clientSocket, addr)).start()
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self.running:
+                    logging.error(f"Error accepting connection: {e}")
 
-        if message['type'] == 'worker':
-            print(f"Worker node connected from {addr}")
-            self.workers.append(client_socket)
-        elif message['type'] == 'client':
-            self.handle_client(client_socket)
+        self.shutdown()
 
-    def handle_client(self, client_socket):
-        while True:
-            data = client_socket.recv(1024).decode()
-            if not data:
-                break
+    def signal_handler(self, signum, frame):
+        logging.info("Shutdown signal received. Cleaning up...")
+        self.running = False
+
+    def shutdown(self):
+        logging.info("Shutting down manager...")
+        if self.server_socket:
+            self.server_socket.close()
+        logging.info("Manager shutdown complete.")
+
+    def handleConnection(self, clientSocket, addr):
+        try:
+            data = clientSocket.recv(1024).decode()
+            logging.debug(f"Received data from {addr}: {data}")
             message = json.loads(data)
-            if message['action'] == 'submit_task':
-                task = deserialize(message['task'], Task)
-                self.submit_task(task, client_socket)
+
+            if message['type'] == 'worker_register':
+                self.registerWorker(message['address'], message['port'])
+                logging.info(f"Worker registered from {message['address']}:{message['port']}")
+            elif message['type'] == 'heartbeat':
+                self.updateWorkerHeartbeat(addr[0], message['port'])
+            elif message['type'] == 'job_result':
+                self.handleJobResult(message['result'])
+            elif message['type'] == 'client':
+                logging.info(f"Client connected from {addr}")
+                self.handleClient(clientSocket)
+            else:
+                logging.warning(f"Unknown message type received: {message['type']}")
+        except json.JSONDecodeError:
+            logging.error(f"Failed to decode JSON from {addr}")
+        except Exception as e:
+            logging.error(f"Error handling connection from {addr}: {str(e)}")
+        finally:
+            clientSocket.close()
+
+    def registerWorker(self, address, port):
+        workerId = f"{address}:{port}"
+        self.workers[workerId] = WorkerInfo(address, port)
+
+    def updateWorkerHeartbeat(self, address, port):
+        workerId = f"{address}:{port}"
+        if workerId in self.workers:
+            self.workers[workerId].lastHeartbeat = time.time()
+            logging.debug(f"Updated heartbeat for worker {workerId}")
+
+    def handleClient(self, clientSocket):
+        try:
+            data = clientSocket.recv(1024).decode()
+            if not data:
+                logging.debug("Client disconnected")
+                return
+            logging.debug(f"Received client message: {data}")
+            message = json.loads(data)
+            if message['action'] == 'submit_job':
+                job = Job(None, message['scriptPath'], message['args'])
+                self.submitJob(job, clientSocket)
             elif message['action'] == 'get_result':
-                self.send_result(message['task_id'], client_socket)
-        client_socket.close()
+                self.sendResult(message['jobId'], clientSocket)
+            elif message['action'] == 'get_job_state':
+                self.sendJobState(message['jobId'], clientSocket)
+            else:
+                logging.warning(f"Unknown client action: {message['action']}")
+        except json.JSONDecodeError:
+            logging.error("Failed to decode JSON from client")
+        except Exception as e:
+            logging.error(f"Error handling client message: {str(e)}")
 
-    def submit_task(self, task, client_socket):
-        if task.user_id not in self.users:
-            self.users[task.user_id] = {'tasks': []}
-        self.users[task.user_id]['tasks'].append(task.task_id)
-        priority = len(self.users[task.user_id]['tasks'])  # Simple priority based on number of user's tasks
-        self.task_queue.put((priority, task))
-        client_socket.send(serialize({'status': 'task_submitted', 'task_id': task.task_id}).encode())
+    def submitJob(self, job, clientSocket):
+        jobId = self.jobQueue.addJob(job)
+        logging.info(f"Job submitted: {jobId}")
+        response = json.dumps({'status': 'job_submitted', 'jobId': jobId})
+        logging.debug(f"Sending response to client: {response}")
+        clientSocket.send(response.encode())
 
-    def send_result(self, task_id, client_socket):
-        if task_id in self.results:
-            result = self.results.pop(task_id)
-            client_socket.send(serialize(result).encode())
+    def sendResult(self, jobId, clientSocket):
+        if jobId in self.results:
+            result = self.results.pop(jobId)
+            response = json.dumps(result)
         else:
-            client_socket.send(serialize({'status': 'result_not_ready'}).encode())
+            response = json.dumps({'status': 'result_not_ready'})
+        logging.debug(f"Sending result to client: {response}")
+        clientSocket.send(response.encode())
 
-    def distribute_tasks(self):
-        while True:
-            if not self.task_queue.empty() and self.workers:
-                _, task = self.task_queue.get()
-                worker = self.workers.pop(0)
-                worker.send(serialize(task).encode())
-                self.workers.append(worker)  # Move to the end of the list
+    def sendJobState(self, jobId, clientSocket):
+        state = self.jobQueue.getJobState(jobId)
+        response = json.dumps({'jobId': jobId, 'state': state.name if state else 'UNKNOWN'})
+        logging.debug(f"Sending job state to client: {response}")
+        clientSocket.send(response.encode())
 
-    def receive_result(self, result):
-        self.results[result.task_id] = result
-        user_id = next(user_id for user_id, user_data in self.users.items() if result.task_id in user_data['tasks'])
-        self.users[user_id]['tasks'].remove(result.task_id)
+    def distributeJobs(self):
+        while self.running:
+            if self.workers and not self.jobQueue.queue.empty():
+                job = self.jobQueue.getJob()
+                worker = self.selectWorker()
+                if worker:
+                    self.sendJobToWorker(job, worker)
+                else:
+                    self.jobQueue.addJob(job)
+            time.sleep(0.1)
 
+    def selectWorker(self):
+        if not self.workers:
+            return None
+        workerIds = list(self.workers.keys())
+        selectedId = workerIds[0]
+        self.workers[selectedId].lastHeartbeat = time.time()
+        return self.workers[selectedId]
+
+    def sendJobToWorker(self, job, worker):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((worker.address, worker.port))
+                serialized_job = serialize(job)
+                s.send(serialized_job.encode())  # Encode the serialized string
+            logging.info(f"Sent job {job.jobId} to worker at {worker.address}:{worker.port}")
+        except Exception as e:
+            logging.error(f"Error sending job to worker: {str(e)}")
+            self.jobQueue.addJob(job)
+
+    def handleJobResult(self, resultData):
+        result = deserialize(resultData, JobResult)
+        self.results[result.jobId] = result
+        self.jobQueue.updateJobState(result.jobId, JobState.COMPLETED if result.success else JobState.FAILED)
+        logging.info(f"Result received for job: {result.jobId}")
+
+    def checkWorkerHeartbeats(self):
+        while self.running:
+            currentTime = time.time()
+            for workerId, worker in list(self.workers.items()):
+                if currentTime - worker.lastHeartbeat > 60:  # 60 seconds timeout
+                    logging.warning(f"Worker {workerId} timed out. Removing from active workers.")
+                    del self.workers[workerId]
+            time.sleep(10)
 
 if __name__ == "__main__":
-    manager = ManagerNode("localhost", 5000)
+    manager = ManagerNode("0.0.0.0", 5000)
     manager.start()
