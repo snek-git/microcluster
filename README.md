@@ -15,7 +15,7 @@ for running on localhost with port 5000:
 
 0. clone the repository:
    ```
-   git clone https://github.com/yourusername/microcluster.git
+   git clone https://github.com/snek-git/microcluster.git
    cd microcluster
    ```
 
