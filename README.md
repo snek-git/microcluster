@@ -1,5 +1,7 @@
 # microcluster
 
+# WIP 
+
 Microcluster is a distributed computing system for running Python scripts across multiple machines.
 
 ## Features
