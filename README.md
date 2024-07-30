@@ -2,39 +2,29 @@
 
 Microcluster is a distributed computing system for running Python scripts across multiple machines.
 
-## Features
+## what you can do with microcluster
 
-- Submit Python jobs from a client
-- Distribute jobs to worker nodes
-- Retrieve job results
-
-## Setup
-
-Before trying to run this program, ensure you have a version of Python 3.x on your machine.
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/microcluster.git
-   cd microcluster
-   ```
-
-2. Set up a virtual environment (optional):
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-   ```
+- submit Python jobs from a client
+- job is submitted to a main controller node, which then distributes jobs among the worker nodes
+- retrieve job results
 
 
 ## Usage
 
-For running on localhost:
+For running on localhost with port 5000:
+
+0. clone the repository:
+   ```
+   git clone https://github.com/yourusername/microcluster.git
+   cd microcluster
+   ```
 
 1. Start the manager:
    ```
    python run.py manager
    ```
 
-2. Start workers:
+2. Start a worker node listening on port 5001:
    ```
    python run.py worker localhost 5000 5001
    ```
