@@ -1,6 +1,6 @@
 # microcluster - WIP
 
-Microcluster is a distributed computing system for running Python scripts across multiple machines.
+microcluster is a distributed computing system for running Python scripts across multiple machines. There is no working prototype yet.
 
 ## what you can do with microcluster
 
@@ -9,9 +9,9 @@ Microcluster is a distributed computing system for running Python scripts across
 - retrieve job results
 
 
-## Usage
+## usage
 
-For running on localhost with port 5000:
+for running on localhost with port 5000:
 
 0. clone the repository:
    ```
@@ -19,38 +19,31 @@ For running on localhost with port 5000:
    cd microcluster
    ```
 
-1. Start the manager:
+1. start the manager:
    ```
    python run.py manager
    ```
 
-2. Start a worker node listening on port 5001:
+2. start a worker node listening on port 5001:
    ```
    python run.py worker localhost 5000 5001
    ```
 
-3. Submit a test script:
+3. submit a test script:
    ```
    python cli/microcluster_client.py localhost 5000 submit --script ./test_scripts/test1.py --args arg1 arg2 arg3
    ```
 
-4. Check job status:
+4. check job status:
    ```
    python cli/microcluster_client.py localhost 5000 state --jobId <job_id>
    ```
 
-5. Get job results:
+5. get job results:
    ```
    python cli/microcluster_client.py localhost 5000 result --jobId <job_id>
    ```
-
-## Project Structure
-
-- `src/`: Core components (manager, worker, utilities)
-- `cli/`: Client interface
-- `test_scripts/`: Sample scripts
-- `run.py`: Main entry point for manager and worker nodes
-
+   
 ## License
 
 This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
