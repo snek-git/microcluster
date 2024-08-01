@@ -1,36 +1,27 @@
-# run.py
 import sys
-import logging
-from src.manager import ManagerNode
-from src.worker import WorkerNode
+import os
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Add the project root directory to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def main():
+from src.manager import Manager
+from src.worker import Worker
+
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python run.py [manager|worker] <args>")
-        return
+        print("Usage: python run.py [manager|worker] <host> <port>")
+        sys.exit(1)
 
-    role = sys.argv[1].lower()
+    role = sys.argv[1]
+    host = sys.argv[2] if len(sys.argv) > 2 else 'localhost'
+    port = int(sys.argv[3]) if len(sys.argv) > 3 else 5000
 
-    if role == "manager":
-        host = "0.0.0.0"  # Listen on all interfaces
-        port = 5000
-        manager = ManagerNode(host, port)
-        logging.info(f"Starting manager node on {host}:{port}")
+    if role == 'manager':
+        manager = Manager(host, port)
         manager.start()
-    elif role == "worker":
-        if len(sys.argv) != 5:
-            print("Usage: python run.py worker <manager_host> <manager_port> <worker_port>")
-            return
-        manager_host = sys.argv[2]
-        manager_port = int(sys.argv[3])
-        worker_port = int(sys.argv[4])
-        worker = WorkerNode(manager_host, manager_port, worker_port)
-        logging.info(f"Starting worker node, connecting to manager at {manager_host}:{manager_port}")
+    elif role == 'worker':
+        worker = Worker(host, port)
         worker.start()
     else:
         print("Invalid role. Use 'manager' or 'worker'.")
-
-if __name__ == "__main__":
-    main()
+        sys.exit(1)
