@@ -67,3 +67,4 @@ if __name__ == "__main__":
 
     worker = Worker(args.manager_host, args.manager_port)
     worker.start()
+    
