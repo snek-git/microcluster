@@ -3,6 +3,7 @@ import json
 import threading
 import queue
 import time
+import os
 
 
 class Manager:
@@ -13,6 +14,8 @@ class Manager:
         self.workers = {}
         self.job_results = {}
         self.lock = threading.Lock()
+        self.script_dir = os.path.join(os.path.dirname(__file__), "..", "manager_scripts")
+        os.makedirs(self.script_dir, exist_ok=True)
 
     def start(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -84,9 +87,16 @@ class Manager:
 
     def handle_job_submission(self, client, message):
         job_id = len(self.job_results) + 1
-        self.job_queue.put((job_id, message['script'], message['args']))
+        script_content = message['script_content']
+        script_name = f"job_{job_id}.py"
+        script_path = os.path.join(self.script_dir, script_name)
+
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+
+        self.job_queue.put((job_id, script_path, message['args']))
         client.send(json.dumps({'job_id': job_id}).encode())
-        print(f"Job {job_id} submitted")
+        print(f"Job {job_id} submitted and script saved to {script_path}")
         self.assign_job()
 
     def handle_result_request(self, client, message):
@@ -106,7 +116,17 @@ class Manager:
         if worker_id is None:
             worker_id = next(iter(self.workers))
         worker = self.workers[worker_id]
-        worker['socket'].send(json.dumps({'type': 'job', 'job_id': job[0], 'script': job[1], 'args': job[2]}).encode())
+
+        with open(job[1], 'r') as f:
+            script_content = f.read()
+
+        worker['socket'].send(json.dumps({
+            'type': 'job',
+            'job_id': job[0],
+            'script_content': script_content,
+            'args': job[2]
+        }).encode())
+        print(f"Job {job[0]} sent to worker {worker_id}")
 
     def check_worker_health(self):
         while True:
@@ -118,4 +138,3 @@ class Manager:
                 for worker_id in dead_workers:
                     print(f"Worker {worker_id} is unresponsive. Removing.")
                     del self.workers[worker_id]
-

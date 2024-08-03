@@ -15,10 +15,13 @@ def send_receive(host, port, message):
         return json.loads(s.recv(1024).decode())
 
 
-def submit_job(host, port, script, args):
+def submit_job(host, port, script_path, args):
+    with open(script_path, 'r') as f:
+        script_content = f.read()
+
     message = {
         'type': 'client_submit',
-        'script': script,
+        'script_content': script_content,
         'args': args
     }
     response = send_receive(host, port, message)
@@ -36,7 +39,7 @@ def get_result(host, port, job_id):
 def main():
     if len(sys.argv) < 5:
         print("Usage:")
-        print("  python client.py submit <host> <port> <script> [args...]")
+        print("  python client.py submit <host> <port> <script_path> [args...]")
         print("  python client.py result <host> <port> <job_id>")
         sys.exit(1)
 
@@ -45,9 +48,9 @@ def main():
     port = int(sys.argv[3])
 
     if action == 'submit':
-        script = sys.argv[4]
+        script_path = sys.argv[4]
         args = sys.argv[5:]
-        job_id = submit_job(host, port, script, args)
+        job_id = submit_job(host, port, script_path, args)
         print(f"Job submitted with ID: {job_id}")
     elif action == 'result':
         job_id = int(sys.argv[4])

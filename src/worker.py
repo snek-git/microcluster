@@ -4,6 +4,7 @@ import subprocess
 import threading
 import time
 import sys
+import os
 
 
 class Worker:
@@ -11,6 +12,8 @@ class Worker:
         self.manager_host = manager_host
         self.manager_port = manager_port
         self.socket = None
+        self.script_dir = os.path.join(os.path.dirname(__file__), "..", "worker_scripts")
+        os.makedirs(self.script_dir, exist_ok=True)
 
     def start(self):
         while True:
@@ -28,7 +31,8 @@ class Worker:
                     message = json.loads(data)
 
                     if message['type'] == 'job':
-                        result = self.execute_job(message['script'], message['args'])
+                        script_path = self.save_script(message['job_id'], message['script_content'])
+                        result = self.execute_job(script_path, message['args'])
                         self.socket.send(json.dumps(
                             {'type': 'worker_result', 'job_id': message['job_id'], 'result': result}).encode())
             except Exception as e:
@@ -46,10 +50,18 @@ class Worker:
             except:
                 break
 
-    def execute_job(self, script, args):
+    def save_script(self, job_id, script_content):
+        script_name = f"job_{job_id}.py"
+        script_path = os.path.join(self.script_dir, script_name)
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+        print(f"Script for job {job_id} saved to {script_path}")
+        return script_path
+
+    def execute_job(self, script_path, args):
         try:
             # Use sys.executable to get the path of the current Python interpreter
-            result = subprocess.run([sys.executable, script] + args, capture_output=True, text=True, timeout=60)
+            result = subprocess.run([sys.executable, script_path] + args, capture_output=True, text=True, timeout=60)
             return {'status': 'success', 'output': result.stdout, 'error': result.stderr}
         except subprocess.TimeoutExpired:
             return {'status': 'timeout', 'error': 'Job exceeded 60 seconds timeout'}
@@ -67,4 +79,3 @@ if __name__ == "__main__":
 
     worker = Worker(args.manager_host, args.manager_port)
     worker.start()
-    
