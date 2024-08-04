@@ -18,37 +18,39 @@ There is a working manager node with two worker nodes set up on Google Cloud. Yo
 
 To use this demo system, replace `<manager_ip>` in the usage instructions below with this IP address.
 
-## Usage
+## Setup
 
 For running on a distributed setup:
 
-0. Clone the repository:
+1. Clone the repository:
    ```
    git clone https://github.com/snek-git/microcluster.git
    cd microcluster
    ```
 
-1. Start the manager:
+2. Start the manager:
    ```
    python3 run.py manager 0.0.0.0 5000
    ```
 
-2. Start a worker node (run this on each worker machine):
+3. Start a worker node (run this on each worker machine):
    ```
    python3 run.py worker <manager_ip> 5000
    ```
 
-3. Submit a test script:
+## Job Submission and Result Retrieval
+
+1. Submit a test script:
    ```
    python3 client.py submit <manager_ip> 5000 test_scripts/hello_world.py Alice
    ```
    This will return a job ID.
 
-4. Get job results:
+2. Get job results:
    ```
    python3 client.py result <manager_ip> 5000 <job_id>
    ```
-   Replace `<job_id>` with the ID returned in step 3.
+   Replace `<job_id>` with the ID returned in step 1.
 
 ## Project Structure
 
