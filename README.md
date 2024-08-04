@@ -1,6 +1,6 @@
 # microcluster
 
-microcluster is a distributed computing system for running Python scripts across multiple machines.
+microcluster is a minimal distributed computing system written in Python for running Python scripts across multiple machines.
 
 ## What you can do with microcluster
 
