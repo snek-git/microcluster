@@ -28,9 +28,9 @@ For running on a distributed setup:
    cd microcluster
    ```
 
-1. Start the manager (replace `<manager_ip>` with the actual IP address of the manager node, e.g., 34.27.180.196 for the demo system):
+1. Start the manager:
    ```
-   python3 run.py manager <manager_ip> 5000
+   python3 run.py manager 0.0.0.0 5000
    ```
 
 2. Start a worker node (run this on each worker machine):
