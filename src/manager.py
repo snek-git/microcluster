@@ -19,7 +19,8 @@ class Manager:
 
     def start(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind((self.host, self.port))
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(('0.0.0.0', self.port))  # Bind to all interfaces
         server.listen(5)
         print(f"Manager listening on {self.host}:{self.port}")
 
@@ -27,6 +28,7 @@ class Manager:
 
         while True:
             client, addr = server.accept()
+            print(f"New connection from: {addr}")
             threading.Thread(target=self.handle_connection, args=(client,)).start()
 
     def handle_connection(self, client):
@@ -55,9 +57,11 @@ class Manager:
 
     def register_worker(self, client):
         worker_id = client.getpeername()
+        print(f"Attempting to register worker: {worker_id}")
         with self.lock:
             self.workers[worker_id] = {'socket': client, 'last_heartbeat': time.time()}
-        print(f"Worker registered: {worker_id}")
+        print(f"Worker registered successfully: {worker_id}")
+        print(f"Current workers: {list(self.workers.keys())}")
         threading.Thread(target=self.handle_worker, args=(worker_id,)).start()
 
     def handle_worker(self, worker_id):
@@ -108,25 +112,33 @@ class Manager:
             client.send(json.dumps({'status': 'not_ready'}).encode())
 
     def assign_job(self, worker_id=None):
+        print(f"Attempting to assign job. Queue size: {self.job_queue.qsize()}")
         if self.job_queue.empty():
+            print("Job queue is empty. No job to assign.")
             return
-        if worker_id is None and not self.workers:
+        if not self.workers:
+            print("No workers available. Cannot assign job.")
             return
         job = self.job_queue.get()
         if worker_id is None:
             worker_id = next(iter(self.workers))
         worker = self.workers[worker_id]
 
+        print(f"Assigning job {job[0]} to worker {worker_id}")
         with open(job[1], 'r') as f:
             script_content = f.read()
 
-        worker['socket'].send(json.dumps({
-            'type': 'job',
-            'job_id': job[0],
-            'script_content': script_content,
-            'args': job[2]
-        }).encode())
-        print(f"Job {job[0]} sent to worker {worker_id}")
+        try:
+            worker['socket'].send(json.dumps({
+                'type': 'job',
+                'job_id': job[0],
+                'script_content': script_content,
+                'args': job[2]
+            }).encode())
+            print(f"Job {job[0]} sent to worker {worker_id}")
+        except Exception as e:
+            print(f"Error sending job to worker: {e}")
+            self.job_queue.put(job)  # Put the job back in the queue
 
     def check_worker_health(self):
         while True:

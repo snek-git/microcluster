@@ -18,25 +18,32 @@ class Worker:
     def start(self):
         while True:
             try:
+                print(f"Attempting to connect to manager at {self.manager_host}:{self.manager_port}")
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.connect((self.manager_host, self.manager_port))
+                print(f"Connected to manager. Sending registration request.")
                 self.socket.send(json.dumps({'type': 'worker_register'}).encode())
+                print("Registration request sent. Waiting for jobs...")
 
                 threading.Thread(target=self.send_heartbeat, daemon=True).start()
 
                 while True:
                     data = self.socket.recv(1024).decode()
                     if not data:
+                        print("Connection to manager lost. Reconnecting...")
                         break
                     message = json.loads(data)
+                    print(f"Received message from manager: {message['type']}")
 
                     if message['type'] == 'job':
+                        print(f"Received job {message['job_id']}. Processing...")
                         script_path = self.save_script(message['job_id'], message['script_content'])
                         result = self.execute_job(script_path, message['args'])
                         self.socket.send(json.dumps(
                             {'type': 'worker_result', 'job_id': message['job_id'], 'result': result}).encode())
+                        print(f"Job {message['job_id']} completed. Result sent to manager.")
             except Exception as e:
-                print(f"Error: {e}. Reconnecting...")
+                print(f"Error: {e}. Attempting to reconnect in 5 seconds...")
                 time.sleep(5)
             finally:
                 if self.socket:
