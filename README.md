@@ -18,6 +18,16 @@ There is a working manager node with two worker nodes set up on Google Cloud. Yo
 
 To use this demo system, replace `<manager_ip>` in the usage instructions below with this IP address.
 
+You can run the following commands to test things out:
+
+```
+   python3 client.py submit 34.27.180.196 5001 test_scripts/hello_world.py Alice
+```
+ ```
+   python3 client.py result 34.27.180.196 5001 <job_id>
+```
+
+
 ## Setup
 
 For running on a distributed setup:
@@ -30,25 +40,25 @@ For running on a distributed setup:
 
 2. Start the manager:
    ```
-   python3 run.py manager 0.0.0.0 5000
+   python3 run.py manager 0.0.0.0 5001
    ```
 
 3. Start a worker node (run this on each worker machine):
    ```
-   python3 run.py worker <manager_ip> 5000
+   python3 run.py worker <manager_ip> 5001
    ```
 
 ## Job Submission and Result Retrieval
 
 1. Submit a test script:
    ```
-   python3 client.py submit <manager_ip> 5000 test_scripts/hello_world.py Alice
+   python3 client.py submit <manager_ip> 5001 test_scripts/hello_world.py Alice
    ```
    This will return a job ID.
 
 2. Get job results:
    ```
-   python3 client.py result <manager_ip> 5000 <job_id>
+   python3 client.py result <manager_ip> 5001 <job_id>
    ```
    Replace `<job_id>` with the ID returned in step 1.
 
@@ -63,7 +73,7 @@ For running on a distributed setup:
 
 ## Notes
 
-- Ensure that all machines can communicate over the specified port (default 5000)
+- Ensure that all machines can communicate over the specified port (default 5001)
 - The system currently supports running Python scripts
 - For testing on localhost, use `localhost` as the `<manager_ip>`
 - To use the Google Cloud demo system, use `34.27.180.196` as the `<manager_ip>`
