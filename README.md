@@ -10,10 +10,10 @@ Microcluster is a minimal distributed computing system written in Python for run
 
 ## Live Demo
 
-There is a working manager node with two worker nodes set up on Google Cloud. You can interact with this system using the following IP address:
+There is a working manager node with two worker nodes set up on Google Cloud. You can interact with this system using the following IP address and port:
 
 ```
-34.27.180.196
+34.27.180.196 5001
 ```
 
 To use this demo system, replace `<manager_ip>` in the usage instructions below with this IP address.
