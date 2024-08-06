@@ -23,7 +23,7 @@ You can run the following commands to test things out:
 ```
    python3 client.py submit 34.27.180.196 5001 test_scripts/hello_world.py Alice
 ```
- ```
+```
    python3 client.py result 34.27.180.196 5001 <job_id>
 ```
 
