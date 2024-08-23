@@ -8,25 +8,6 @@ Microcluster is a minimal distributed computing system written in Python for run
 - Jobs are submitted to a main controller node (manager), which then distributes them among worker nodes
 - Retrieve job results
 
-## Live Demo
-
-There is a working manager node with two worker nodes set up on Google Cloud. You can interact with this system using the following IP address and port:
-
-```
-34.27.180.196 5001
-```
-
-To use this demo system, replace `<manager_ip>` in the usage instructions below with this IP address.
-
-You can run the following commands to test things out:
-
-```
-   python3 client.py submit 34.27.180.196 5001 test_scripts/hello_world.py Alice
-```
-```
-   python3 client.py result 34.27.180.196 5001 <job_id>
-```
-
 
 ## Setup
 
@@ -76,7 +57,6 @@ For running on a distributed setup:
 - Ensure that all machines can communicate over the specified port (default 5001)
 - The system currently supports running Python scripts
 - For testing on localhost, use `localhost` as the `<manager_ip>`
-- To use the Google Cloud demo system, use `34.27.180.196` as the `<manager_ip>`
 
 ## License
 
