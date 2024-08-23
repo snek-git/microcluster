@@ -142,7 +142,7 @@ class Manager:
 
     def check_worker_health(self):
         while True:
-            time.sleep(10)  # Check every 10 seconds
+            time.sleep(10) 
             with self.lock:
                 current_time = time.time()
                 dead_workers = [worker_id for worker_id, worker in self.workers.items()
