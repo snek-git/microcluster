@@ -1,5 +1,5 @@
 # Set your project ID
-PROJECT_ID="prj-snek-dev"
+PROJECT_ID="__PROJECT_ID__"
 gcloud config set project $PROJECT_ID
 
 echo "Creating microcluster VPC network..."
